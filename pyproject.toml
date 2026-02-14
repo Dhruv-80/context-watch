@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contextwatch"
+version = "0.1.0"
+description = "CLI tool for controlled LLM inference with token accounting."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "torch",
+    "transformers",
+]
+
+[project.scripts]
+contextwatch = "contextwatch.cli:main"
