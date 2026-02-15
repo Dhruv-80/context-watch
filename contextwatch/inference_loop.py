@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
+
+from contextwatch.monitor.context_tracker import ContextSummary, ContextTracker
 
 
 # ---------------------------------------------------------------------------
@@ -19,6 +21,7 @@ class InferenceResult:
     generated_token_count: int
     total_token_count: int
     generated_text: str
+    context_summary: ContextSummary | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +63,7 @@ def run_inference(
     tokenizer: PreTrainedTokenizerBase,
     prompt: str,
     max_tokens: int,
+    warn_threshold: float = 0.75,
 ) -> InferenceResult:
     """Run manual stepwise token generation.
 
@@ -72,12 +76,14 @@ def run_inference(
        via ``argmax`` on the final logits and feeding it back with the
        cached ``past_key_values``.
     4. Stops early if the EOS token is produced.
+    5. Stops early if the context window is full.
 
     Args:
         model: A Hugging Face causal language model.
         tokenizer: The corresponding tokenizer.
         prompt: The text prompt.
         max_tokens: Maximum number of new tokens to generate.
+        warn_threshold: Context usage fraction (0–1) at which to warn.
 
     Returns:
         An :class:`InferenceResult` with token counts and generated text.
@@ -96,7 +102,8 @@ def run_inference(
     past_key_values = None
     eos_token_id: int | None = tokenizer.eos_token_id
 
-    # TODO (Phase 2): add hooks here for monitoring / memory tracking
+    # --- context tracking (Phase 2) ---------------------------------------
+    tracker = ContextTracker(model, warn_threshold=warn_threshold)
 
     with torch.no_grad():
         for step in range(max_tokens):
@@ -118,12 +125,17 @@ def run_inference(
 
             generated_ids.append(next_token_id)
 
+            # --- per-step context tracking (Phase 2) ----------------------
+            current_total = prompt_token_count + len(generated_ids)
+            tracker.record_step(step, current_total)
+
+            if tracker.is_context_full(current_total):
+                break
+
             # prepare input for the next step (single token, reuse cache)
             current_input_ids = torch.tensor(
                 [[next_token_id]], dtype=torch.long, device=device
             )
-
-    # TODO (Phase 2): collect per-step metrics here
 
     generated_token_count = len(generated_ids)
     generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
@@ -133,4 +145,5 @@ def run_inference(
         generated_token_count=generated_token_count,
         total_token_count=prompt_token_count + generated_token_count,
         generated_text=generated_text,
+        context_summary=tracker.summarize(),
     )

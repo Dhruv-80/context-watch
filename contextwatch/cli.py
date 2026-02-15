@@ -40,8 +40,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=50,
         help="Maximum number of tokens to generate (default: 50).",
     )
+    run_parser.add_argument(
+        "--warn-threshold",
+        type=float,
+        default=0.75,
+        help="Context usage fraction (0–1) at which to emit a warning (default: 0.75).",
+    )
 
-    # TODO (Phase 2): add subcommands for monitoring, forecasting, etc.
     return parser
 
 
@@ -67,14 +72,22 @@ def _handle_run(args: argparse.Namespace) -> None:
         tokenizer=tokenizer,
         prompt=args.prompt,
         max_tokens=args.max_tokens,
+        warn_threshold=args.warn_threshold,
     )
 
-    # --- output (kept deliberately simple for Phase 0/1) -------------------
+    # --- token counts ------------------------------------------------------
     print(f"\nPrompt tokens: {result.prompt_token_count}")
     print(f"Generated tokens: {result.generated_token_count}")
     print(f"Total tokens: {result.total_token_count}")
 
-    # TODO (Phase 2): structured output / JSON mode
+    # --- context tracking (Phase 2) ----------------------------------------
+    ctx = result.context_summary
+    if ctx is not None:
+        pct = round(ctx.context_used_pct * 100, 1)
+        print(f"\nContext: {pct}% ({ctx.final_total_tokens}/{ctx.max_context})")
+        print(f"Remaining tokens: {ctx.remaining_tokens}")
+        if ctx.warning_issued:
+            print("(!) Context warning was triggered during generation.")
 
 
 if __name__ == "__main__":
