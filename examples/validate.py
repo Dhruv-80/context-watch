@@ -31,6 +31,16 @@ def main() -> None:
     print(f"Total tokens: {result.total_token_count}")
     print(f"Generated text: \"{result.generated_text}\"")
 
+    # --- context tracking output (Phase 2) ---------------------------------
+    ctx = result.context_summary
+    if ctx is not None:
+        pct = round(ctx.context_used_pct * 100, 1)
+        print(f"\nContext: {pct}% ({ctx.final_total_tokens}/{ctx.max_context})")
+        print(f"Remaining tokens: {ctx.remaining_tokens}")
+        print(f"Per-step snapshots recorded: {len(ctx.per_step_snapshots)}")
+        if ctx.warning_issued:
+            print("(!) Context warning was triggered during generation.")
+
     # --- basic assertions --------------------------------------------------
     assert result.total_token_count == result.prompt_token_count + result.generated_token_count, (
         f"Token count mismatch: {result.total_token_count} != "
@@ -40,6 +50,21 @@ def main() -> None:
         f"Generated more tokens than allowed: {result.generated_token_count} > {max_tokens}"
     )
     assert result.prompt_token_count > 0, "Prompt token count must be > 0"
+
+    # --- context tracking assertions (Phase 2) -----------------------------
+    assert ctx is not None, "Context summary must not be None"
+    assert ctx.max_context > 0, f"Max context must be > 0, got {ctx.max_context}"
+    assert ctx.remaining_tokens == ctx.max_context - ctx.final_total_tokens, (
+        f"Remaining mismatch: {ctx.remaining_tokens} != "
+        f"{ctx.max_context} - {ctx.final_total_tokens}"
+    )
+    assert 0.0 <= ctx.context_used_pct <= 1.0, (
+        f"Context used % out of range: {ctx.context_used_pct}"
+    )
+    assert len(ctx.per_step_snapshots) == result.generated_token_count, (
+        f"Snapshot count mismatch: {len(ctx.per_step_snapshots)} != "
+        f"{result.generated_token_count}"
+    )
 
     print("\n✅ All assertions passed.")
 

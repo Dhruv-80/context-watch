@@ -23,6 +23,22 @@ HOW TO UPDATE:
 - ...
 -->
 
+## [0.2.0] - 2026-02-15
+
+### Added
+- `contextwatch/monitor/` package with `ContextTracker`, `ContextSnapshot`, and `ContextSummary`
+- Max context window detection from model config (`max_position_embeddings` / `n_positions` / `n_ctx`)
+- Per-step context usage tracking: % used, remaining tokens
+- Configurable warning threshold via `--warn-threshold` CLI flag (default 75%)
+- Context exhaustion early stopping — generation stops if context window is full
+- Context summary printed in CLI output (`Context: X% (used/max)`, `Remaining tokens: N`)
+- `context_summary` field on `InferenceResult` for programmatic access
+- Context tracking assertions in `examples/validate.py`
+
+### Notes
+- Phase 2 complete — context tracking is now live
+- Warning is emitted to stderr so it does not pollute piped stdout
+
 ## [0.1.0] - 2026-02-14
 
 ### Added
