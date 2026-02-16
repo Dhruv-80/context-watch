@@ -23,6 +23,33 @@ HOW TO UPDATE:
 - ...
 -->
 
+## [0.3.0] - 2026-02-16
+
+### Added
+- `contextwatch/monitor/latency_tracker.py` with `LatencyTracker`, `LatencySnapshot`, and `LatencySummary`
+- **Time To First Token (TTFT)** tracking — measures latency from inference start to first generated token
+- **Per-token latency** tracking — records individual token generation time using `time.perf_counter()`
+- **Rolling average latency** — computes average over last N tokens (configurable window, default 20)
+- **Latency trend analysis** — linear regression slope showing latency growth rate (ms per 100 tokens)
+- Latency metrics display in CLI output:
+  - TTFT (ms)
+  - Current token latency (ms)
+  - Rolling average (last 20 tokens)
+  - Trend slope (ms per 100 tokens)
+- `latency_summary` field on `InferenceResult` for programmatic access
+- Latency tracking assertions in `examples/validate.py`
+
+### Changed
+- Updated `InferenceResult` dataclass to include `latency_summary` field
+- Modified inference loop to capture timing around model forward pass and token selection
+- Exported `LatencyTracker`, `LatencySnapshot`, `LatencySummary` from `monitor` package
+
+### Notes
+- Phase 3 complete — latency tracking is now live
+- Timing uses high-resolution `time.perf_counter()` for accuracy
+- Only model forward pass + token selection is timed (no I/O overhead)
+- Trend calculation uses simple least-squares linear regression (no external dependencies)
+
 ## [0.2.0] - 2026-02-15
 
 ### Added
