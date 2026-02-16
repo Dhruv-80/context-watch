@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import time
 
 import torch
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from contextwatch.monitor.context_tracker import ContextSummary, ContextTracker
+from contextwatch.monitor.latency_tracker import LatencySummary, LatencyTracker
 
 
 # ---------------------------------------------------------------------------
@@ -22,6 +24,7 @@ class InferenceResult:
     total_token_count: int
     generated_text: str
     context_summary: ContextSummary | None = field(default=None, repr=False)
+    latency_summary: LatencySummary | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -105,8 +108,15 @@ def run_inference(
     # --- context tracking (Phase 2) ---------------------------------------
     tracker = ContextTracker(model, warn_threshold=warn_threshold)
 
+    # --- latency tracking (Phase 3) ----------------------------------------
+    latency_tracker = LatencyTracker(rolling_window=20)
+    latency_tracker.start()
+
     with torch.no_grad():
         for step in range(max_tokens):
+            # --- timing: start (Phase 3) -----------------------------------
+            step_start_time = time.perf_counter()
+
             outputs = model(
                 input_ids=current_input_ids,
                 past_key_values=past_key_values,
@@ -118,6 +128,10 @@ def run_inference(
 
             # greedy: pick the highest-probability token
             next_token_id: int = int(torch.argmax(logits[:, -1, :], dim=-1).item())
+
+            # --- timing: end (Phase 3) -------------------------------------
+            step_end_time = time.perf_counter()
+            latency_tracker.record_step(step, step_start_time, step_end_time)
 
             # EOS early stop
             if next_token_id == eos_token_id:
@@ -146,4 +160,5 @@ def run_inference(
         total_token_count=prompt_token_count + generated_token_count,
         generated_text=generated_text,
         context_summary=tracker.summarize(),
+        latency_summary=latency_tracker.summarize(),
     )

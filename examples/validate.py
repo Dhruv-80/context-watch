@@ -41,6 +41,21 @@ def main() -> None:
         if ctx.warning_issued:
             print("(!) Context warning was triggered during generation.")
 
+    # --- latency tracking output (Phase 3) ---------------------------------
+    lat = result.latency_summary
+    if lat is not None:
+        print("\nLatency Metrics:")
+        if lat.ttft_ms is not None:
+            print(f"  TTFT: {lat.ttft_ms:.1f} ms")
+        if lat.current_token_latency_ms is not None:
+            print(f"  Current token latency: {lat.current_token_latency_ms:.1f} ms")
+        if lat.rolling_avg_ms is not None:
+            print(f"  Rolling avg (last 20): {lat.rolling_avg_ms:.1f} ms")
+        if lat.trend_ms_per_100_tokens is not None:
+            sign = "+" if lat.trend_ms_per_100_tokens >= 0 else ""
+            print(f"  Trend: {sign}{lat.trend_ms_per_100_tokens:.1f} ms per 100 tokens")
+        print(f"  Per-step snapshots recorded: {len(lat.per_step_snapshots)}")
+
     # --- basic assertions --------------------------------------------------
     assert result.total_token_count == result.prompt_token_count + result.generated_token_count, (
         f"Token count mismatch: {result.total_token_count} != "
@@ -65,6 +80,29 @@ def main() -> None:
         f"Snapshot count mismatch: {len(ctx.per_step_snapshots)} != "
         f"{result.generated_token_count}"
     )
+
+    # --- latency tracking assertions (Phase 3) -----------------------------
+    assert lat is not None, "Latency summary must not be None"
+    assert lat.ttft_ms is not None and lat.ttft_ms > 0, (
+        f"TTFT must be > 0, got {lat.ttft_ms}"
+    )
+    assert lat.current_token_latency_ms is not None and lat.current_token_latency_ms > 0, (
+        f"Current token latency must be > 0, got {lat.current_token_latency_ms}"
+    )
+    assert len(lat.per_step_snapshots) == result.generated_token_count, (
+        f"Latency snapshot count mismatch: {len(lat.per_step_snapshots)} != "
+        f"{result.generated_token_count}"
+    )
+    # Rolling average should exist for 20 tokens
+    if result.generated_token_count >= 20:
+        assert lat.rolling_avg_ms is not None and lat.rolling_avg_ms > 0, (
+            f"Rolling avg should exist for {result.generated_token_count} tokens"
+        )
+    # Trend should be numeric (can be positive, negative, or zero)
+    if lat.trend_ms_per_100_tokens is not None:
+        assert isinstance(lat.trend_ms_per_100_tokens, (int, float)), (
+            f"Trend must be numeric, got {type(lat.trend_ms_per_100_tokens)}"
+        )
 
     print("\n✅ All assertions passed.")
 

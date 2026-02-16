@@ -89,6 +89,21 @@ def _handle_run(args: argparse.Namespace) -> None:
         if ctx.warning_issued:
             print("(!) Context warning was triggered during generation.")
 
+    # --- latency tracking (Phase 3) ----------------------------------------
+    lat = result.latency_summary
+    if lat is not None:
+        print("\nLatency Metrics:")
+        if lat.ttft_ms is not None:
+            print(f"  TTFT: {lat.ttft_ms:.1f} ms")
+        if lat.current_token_latency_ms is not None:
+            print(f"  Current token latency: {lat.current_token_latency_ms:.1f} ms")
+        if lat.rolling_avg_ms is not None:
+            print(f"  Rolling avg (last 20): {lat.rolling_avg_ms:.1f} ms")
+        if lat.trend_ms_per_100_tokens is not None:
+            sign = "+" if lat.trend_ms_per_100_tokens >= 0 else ""
+            print(f"  Trend: {sign}{lat.trend_ms_per_100_tokens:.1f} ms per 100 tokens")
+
+
 
 if __name__ == "__main__":
     main()
