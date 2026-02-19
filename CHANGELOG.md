@@ -23,6 +23,29 @@ HOW TO UPDATE:
 - ...
 -->
 
+## [0.4.0] - 2026-02-19
+
+### Added
+- `contextwatch/monitor/memory_tracker.py` with `MemoryTracker`, `MemorySnapshot`, and `MemorySummary`
+- **Process memory (RSS) tracking** via `psutil` — records memory after each token generation step
+- **Peak memory detection** — tracks highest RSS observed during inference
+- **Memory growth metrics** — total growth, average growth per token, growth per 100 tokens
+- Memory metrics display in CLI output (current, peak, total growth, growth rate, avg per token)
+- `memory_summary` field on `InferenceResult` for programmatic access
+- Memory tracking assertions in `examples/validate.py`
+- `psutil` added to project dependencies
+
+### Changed
+- Updated `InferenceResult` dataclass to include `memory_summary` field
+- Modified inference loop to sample RSS after each forward pass + token append
+- Exported `MemoryTracker`, `MemorySnapshot`, `MemorySummary` from `monitor` package
+
+### Notes
+- Phase 4 complete — memory & KV cache growth tracking is now live
+- Memory measurement is empirical (process RSS), not theoretical KV size estimation
+- Growth is not perfectly linear — initial KV allocation causes a burst on early tokens
+- TODO: Phase 5 will consume growth rate for forecasting
+
 ## [0.3.0] - 2026-02-16
 
 ### Added

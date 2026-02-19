@@ -10,6 +10,7 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from contextwatch.monitor.context_tracker import ContextSummary, ContextTracker
 from contextwatch.monitor.latency_tracker import LatencySummary, LatencyTracker
+from contextwatch.monitor.memory_tracker import MemorySummary, MemoryTracker
 
 
 # ---------------------------------------------------------------------------
@@ -25,6 +26,7 @@ class InferenceResult:
     generated_text: str
     context_summary: ContextSummary | None = field(default=None, repr=False)
     latency_summary: LatencySummary | None = field(default=None, repr=False)
+    memory_summary: MemorySummary | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +114,10 @@ def run_inference(
     latency_tracker = LatencyTracker(rolling_window=20)
     latency_tracker.start()
 
+    # --- memory tracking (Phase 4) -----------------------------------------
+    memory_tracker = MemoryTracker()
+    memory_tracker.start()
+
     with torch.no_grad():
         for step in range(max_tokens):
             # --- timing: start (Phase 3) -----------------------------------
@@ -143,6 +149,9 @@ def run_inference(
             current_total = prompt_token_count + len(generated_ids)
             tracker.record_step(step, current_total)
 
+            # --- per-step memory tracking (Phase 4) -----------------------
+            memory_tracker.record_step(step)
+
             if tracker.is_context_full(current_total):
                 break
 
@@ -161,4 +170,5 @@ def run_inference(
         generated_text=generated_text,
         context_summary=tracker.summarize(),
         latency_summary=latency_tracker.summarize(),
+        memory_summary=memory_tracker.summarize(),
     )

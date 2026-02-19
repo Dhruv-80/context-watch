@@ -56,6 +56,18 @@ def main() -> None:
             print(f"  Trend: {sign}{lat.trend_ms_per_100_tokens:.1f} ms per 100 tokens")
         print(f"  Per-step snapshots recorded: {len(lat.per_step_snapshots)}")
 
+    # --- memory tracking output (Phase 4) ----------------------------------
+    mem = result.memory_summary
+    if mem is not None:
+        print("\nMemory Metrics:")
+        print(f"  Initial memory: {mem.initial_memory_mb:.2f} MB")
+        print(f"  Current memory: {mem.current_memory_mb:.2f} MB")
+        print(f"  Peak memory: {mem.peak_memory_mb:.2f} MB")
+        print(f"  Total growth: +{mem.memory_growth_total_mb:.2f} MB")
+        print(f"  Avg per token: {mem.avg_growth_per_token_mb:.4f} MB")
+        print(f"  Growth rate: +{mem.growth_per_100_tokens_mb:.2f} MB per 100 tokens")
+        print(f"  Per-step snapshots recorded: {len(mem.per_step_snapshots)}")
+
     # --- basic assertions --------------------------------------------------
     assert result.total_token_count == result.prompt_token_count + result.generated_token_count, (
         f"Token count mismatch: {result.total_token_count} != "
@@ -103,6 +115,27 @@ def main() -> None:
         assert isinstance(lat.trend_ms_per_100_tokens, (int, float)), (
             f"Trend must be numeric, got {type(lat.trend_ms_per_100_tokens)}"
         )
+
+    # --- memory tracking assertions (Phase 4) ------------------------------
+    assert mem is not None, "Memory summary must not be None"
+    assert mem.initial_memory_mb > 0, (
+        f"Initial memory must be > 0, got {mem.initial_memory_mb}"
+    )
+    assert mem.current_memory_mb > 0, (
+        f"Current memory must be > 0, got {mem.current_memory_mb}"
+    )
+    # Peak memory must be >= current memory (by definition)
+    assert mem.peak_memory_mb >= mem.current_memory_mb, (
+        f"Peak memory ({mem.peak_memory_mb}) must be >= current ({mem.current_memory_mb})"
+    )
+    # Memory growth should be non-negative (process memory generally grows)
+    assert mem.memory_growth_total_mb >= 0, (
+        f"Memory growth should be >= 0, got {mem.memory_growth_total_mb}"
+    )
+    assert len(mem.per_step_snapshots) == result.generated_token_count, (
+        f"Memory snapshot count mismatch: {len(mem.per_step_snapshots)} != "
+        f"{result.generated_token_count}"
+    )
 
     print("\n✅ All assertions passed.")
 

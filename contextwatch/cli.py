@@ -103,7 +103,22 @@ def _handle_run(args: argparse.Namespace) -> None:
             sign = "+" if lat.trend_ms_per_100_tokens >= 0 else ""
             print(f"  Trend: {sign}{lat.trend_ms_per_100_tokens:.1f} ms per 100 tokens")
 
+    # --- memory tracking (Phase 4) -----------------------------------------
+    mem = result.memory_summary
+    if mem is not None:
+        # Use GB for values >= 1024 MB, otherwise MB
+        def _fmt_mb(val: float) -> str:
+            if val >= 1024.0:
+                return f"{val / 1024:.2f} GB"
+            return f"{val:.2f} MB"
 
-
+        print("\nMemory Metrics:")
+        print(f"  Current memory: {_fmt_mb(mem.current_memory_mb)}")
+        print(f"  Peak memory: {_fmt_mb(mem.peak_memory_mb)}")
+        sign = "+" if mem.memory_growth_total_mb >= 0 else ""
+        print(f"  Total growth: {sign}{mem.memory_growth_total_mb:.2f} MB")
+        sign = "+" if mem.growth_per_100_tokens_mb >= 0 else ""
+        print(f"  Growth rate: {sign}{mem.growth_per_100_tokens_mb:.2f} MB per 100 tokens")
+        print(f"  Avg per token: {mem.avg_growth_per_token_mb:.4f} MB")
 if __name__ == "__main__":
     main()
