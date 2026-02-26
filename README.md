@@ -8,7 +8,7 @@ A Python CLI tool for controlled LLM inference with token accounting.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-contextwatch run --model distilgpt2 --prompt "Hello" --max-tokens 50
+contextwatch run --model distilgpt2 --prompt "Hello" --max-tokens 50 --memory-limit 1GB --latency-limit 100ms
 ```
 
 Output:
@@ -33,9 +33,14 @@ Memory Metrics:
   Total growth: +312.70 MB
   Growth rate: +625.41 MB per 100 tokens
   Avg per token: 6.2541 MB
+
+Forecast:
+  Context saturation in: ~973 tokens
+  Memory limit (1.00 GB) in: ~57 tokens
+  Latency >100ms: no degradation trend — threshold unlikely to be reached
 ```
 
-## Features (v0.4.0)
+## Features (v0.5.0)
 
 - Manual stepwise inference — no `model.generate()`
 - KV-cache management with `past_key_values`
@@ -48,6 +53,8 @@ Memory Metrics:
 - **Latency trend analysis** — Linear regression slope showing latency growth (ms per 100 tokens)
 - **Memory tracking** — Process RSS monitoring via `psutil` (current, peak, growth)
 - **KV cache growth rate** — Average memory growth per token and per 100 tokens
+- **Forecasting engine** — Predicts context saturation, memory limit hit, and latency threshold breach
+- **CLI forecast flags** — `--memory-limit 8GB` and `--latency-limit 100ms`
 
 ## Versioning
 
@@ -59,6 +66,7 @@ We use simple semantic-style versioning tied to project phases:
 | 0.2.0   | 2     | Context window tracking + warnings |
 | 0.3.0   | 3     | Latency tracking (TTFT, rolling avg, trend) |
 | 0.4.0   | 4     | Memory & KV cache growth tracking |
+| 0.5.0   | 5     | Forecasting engine (context, memory, latency) |
 
 The version is defined in two places — keep them in sync:
 - `contextwatch/__init__.py` → `__version__`

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from contextwatch.inference_loop import run_inference
+from contextwatch.monitor.forecaster import compute_forecast
 from contextwatch.utils import load_model
 
 
@@ -14,7 +15,7 @@ def main() -> None:
 
     print(f"=== ContextWatch Validation ===")
     print(f"Model:      {model_name}")
-    print(f"Prompt:     \"{prompt}\"")
+    print(f'Prompt:     "{prompt}"')
     print(f"Max tokens: {max_tokens}\n")
 
     model, tokenizer = load_model(model_name)
@@ -29,7 +30,7 @@ def main() -> None:
     print(f"\nPrompt tokens: {result.prompt_token_count}")
     print(f"Generated tokens: {result.generated_token_count}")
     print(f"Total tokens: {result.total_token_count}")
-    print(f"Generated text: \"{result.generated_text}\"")
+    print(f'Generated text: "{result.generated_text}"')
 
     # --- context tracking output (Phase 2) ---------------------------------
     ctx = result.context_summary
@@ -68,6 +69,39 @@ def main() -> None:
         print(f"  Growth rate: +{mem.growth_per_100_tokens_mb:.2f} MB per 100 tokens")
         print(f"  Per-step snapshots recorded: {len(mem.per_step_snapshots)}")
 
+    # --- forecast output (Phase 5) -----------------------------------------
+    forecast = None
+    if ctx is not None:
+        latency_slope_per_token = None
+        if lat is not None and lat.trend_ms_per_100_tokens is not None:
+            latency_slope_per_token = lat.trend_ms_per_100_tokens / 100.0
+
+        # Use 1 GB as a test memory limit
+        memory_limit_mb = 1024.0
+
+        forecast = compute_forecast(
+            total_tokens=result.total_token_count,
+            max_context=ctx.max_context,
+            current_memory_mb=mem.current_memory_mb if mem else None,
+            avg_growth_per_token_mb=mem.avg_growth_per_token_mb if mem else None,
+            memory_limit_mb=memory_limit_mb,
+            current_latency_ms=lat.current_token_latency_ms if lat else None,
+            latency_slope_per_token_ms=latency_slope_per_token,
+            latency_threshold_ms=100.0,  # test with 100ms threshold
+        )
+
+        print("\nForecast (test: memory_limit=1GB, latency_limit=100ms):")
+        if forecast.tokens_until_context_limit is not None:
+            print(f"  Context saturation in: ~{forecast.tokens_until_context_limit} tokens")
+        if forecast.tokens_until_memory_limit is not None:
+            print(f"  Memory limit (1 GB) in: ~{forecast.tokens_until_memory_limit} tokens")
+        elif not forecast.memory_already_exceeded:
+            print("  Memory limit (1 GB): unlikely to be reached")
+        if forecast.tokens_until_latency_threshold is not None:
+            print(f"  Latency >100ms in: ~{forecast.tokens_until_latency_threshold} tokens")
+        elif not forecast.latency_already_exceeded:
+            print("  Latency >100ms: no degradation trend")
+
     # --- basic assertions --------------------------------------------------
     assert result.total_token_count == result.prompt_token_count + result.generated_token_count, (
         f"Token count mismatch: {result.total_token_count} != "
@@ -105,12 +139,10 @@ def main() -> None:
         f"Latency snapshot count mismatch: {len(lat.per_step_snapshots)} != "
         f"{result.generated_token_count}"
     )
-    # Rolling average should exist for 20 tokens
     if result.generated_token_count >= 20:
         assert lat.rolling_avg_ms is not None and lat.rolling_avg_ms > 0, (
             f"Rolling avg should exist for {result.generated_token_count} tokens"
         )
-    # Trend should be numeric (can be positive, negative, or zero)
     if lat.trend_ms_per_100_tokens is not None:
         assert isinstance(lat.trend_ms_per_100_tokens, (int, float)), (
             f"Trend must be numeric, got {type(lat.trend_ms_per_100_tokens)}"
@@ -124,17 +156,46 @@ def main() -> None:
     assert mem.current_memory_mb > 0, (
         f"Current memory must be > 0, got {mem.current_memory_mb}"
     )
-    # Peak memory must be >= current memory (by definition)
     assert mem.peak_memory_mb >= mem.current_memory_mb, (
         f"Peak memory ({mem.peak_memory_mb}) must be >= current ({mem.current_memory_mb})"
     )
-    # Memory growth should be non-negative (process memory generally grows)
     assert mem.memory_growth_total_mb >= 0, (
         f"Memory growth should be >= 0, got {mem.memory_growth_total_mb}"
     )
     assert len(mem.per_step_snapshots) == result.generated_token_count, (
         f"Memory snapshot count mismatch: {len(mem.per_step_snapshots)} != "
         f"{result.generated_token_count}"
+    )
+
+    # --- forecast assertions (Phase 5) -------------------------------------
+    assert forecast is not None, "Forecast must not be None"
+
+    # Context forecast: must exactly match remaining tokens from context tracker
+    assert forecast.tokens_until_context_limit == ctx.remaining_tokens, (
+        f"Context forecast mismatch: {forecast.tokens_until_context_limit} != "
+        f"{ctx.remaining_tokens}"
+    )
+    assert not forecast.context_already_saturated, (
+        "Context should not be saturated after only 20 tokens"
+    )
+
+    # Memory forecast: with 1GB limit and ~660MB current, should have room
+    if forecast.tokens_until_memory_limit is not None:
+        assert forecast.tokens_until_memory_limit > 0, (
+            f"Should have tokens remaining before 1GB limit, got {forecast.tokens_until_memory_limit}"
+        )
+    assert not forecast.memory_already_exceeded, (
+        "Memory should not exceed 1GB after 20 tokens with distilgpt2"
+    )
+
+    # Latency forecast: with 100ms threshold and ~5-7ms current latency,
+    # either we get a positive token count or None (no degradation trend)
+    if forecast.tokens_until_latency_threshold is not None:
+        assert forecast.tokens_until_latency_threshold >= 0, (
+            f"Latency forecast must be >= 0, got {forecast.tokens_until_latency_threshold}"
+        )
+    assert not forecast.latency_already_exceeded, (
+        "Latency should not exceed 100ms with distilgpt2 on CPU"
     )
 
     print("\n✅ All assertions passed.")

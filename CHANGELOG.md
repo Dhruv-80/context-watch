@@ -23,6 +23,29 @@ HOW TO UPDATE:
 - ...
 -->
 
+## [0.5.0] - 2026-02-26
+
+### Added
+- `contextwatch/monitor/forecaster.py` with `ForecastResult` dataclass and `compute_forecast()` function
+- **Context saturation forecast** — deterministic: `max_context - total_tokens`
+- **Memory limit forecast** — linear extrapolation: `remaining_memory / avg_growth_per_token`
+- **Latency threshold forecast** — solve linear equation: `(threshold - current) / slope`
+- CLI flags: `--memory-limit` (e.g. `8GB`, `512MB`) and `--latency-limit` (e.g. `100ms`)
+- Forecast output section in CLI with `⚠` warnings when limits are already exceeded
+- Human-readable parsing for memory (GB/MB) and latency (ms) CLI arguments
+- Forecast assertions in `examples/validate.py`
+
+### Changed
+- Updated CLI to accept and parse `--memory-limit` and `--latency-limit` arguments
+- Exported `ForecastResult` and `compute_forecast` from `monitor` package
+
+### Notes
+- Phase 5 complete — forecasting engine is now live
+- All formulas are simple linear extrapolations — no ML, no sklearn, no external dependencies
+- Forecasts are approximate: memory forecast is conservative for short runs due to KV allocation burst
+- Latency forecast returns None when trend slope ≤ 0 (no degradation detected)
+- TODO: Future improvement: non-linear modeling
+
 ## [0.4.0] - 2026-02-19
 
 ### Added

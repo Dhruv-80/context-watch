@@ -3,10 +3,43 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 from contextwatch.inference_loop import run_inference
+from contextwatch.monitor.forecaster import ForecastResult, compute_forecast
 from contextwatch.utils import load_model
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _parse_memory_limit(value: str) -> float:
+    """Parse a human-readable memory limit string into MB.
+
+    Accepts formats like ``8GB``, ``8 GB``, ``512MB``, ``512 mb``.
+    """
+    match = re.match(r"^\s*([\d.]+)\s*(GB|MB)\s*$", value.strip(), re.IGNORECASE)
+    if not match:
+        raise argparse.ArgumentTypeError(
+            f"Invalid memory format: '{value}'. Use e.g. '8GB' or '512MB'."
+        )
+    number = float(match.group(1))
+    unit = match.group(2).upper()
+    return number * 1024.0 if unit == "GB" else number
+
+
+def _parse_latency_limit(value: str) -> float:
+    """Parse a latency limit string into ms.
+
+    Accepts formats like ``100ms``, ``100 ms``, or plain ``100``.
+    """
+    match = re.match(r"^\s*([\d.]+)\s*(ms)?\s*$", value.strip(), re.IGNORECASE)
+    if not match:
+        raise argparse.ArgumentTypeError(
+            f"Invalid latency format: '{value}'. Use e.g. '100ms' or '100'."
+        )
+    return float(match.group(1))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -45,6 +78,18 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.75,
         help="Context usage fraction (0–1) at which to emit a warning (default: 0.75).",
+    )
+    run_parser.add_argument(
+        "--memory-limit",
+        type=_parse_memory_limit,
+        default=None,
+        help="Memory ceiling for forecasting, e.g. '8GB' or '512MB'.",
+    )
+    run_parser.add_argument(
+        "--latency-limit",
+        type=_parse_latency_limit,
+        default=None,
+        help="Latency threshold in ms for forecasting, e.g. '100ms' or '100'.",
     )
 
     return parser
@@ -120,5 +165,54 @@ def _handle_run(args: argparse.Namespace) -> None:
         sign = "+" if mem.growth_per_100_tokens_mb >= 0 else ""
         print(f"  Growth rate: {sign}{mem.growth_per_100_tokens_mb:.2f} MB per 100 tokens")
         print(f"  Avg per token: {mem.avg_growth_per_token_mb:.4f} MB")
+
+    # --- forecasting (Phase 5) ---------------------------------------------
+    # Derive latency slope per token from the per-100-tokens value
+    latency_slope_per_token: float | None = None
+    if lat is not None and lat.trend_ms_per_100_tokens is not None:
+        latency_slope_per_token = lat.trend_ms_per_100_tokens / 100.0
+
+    if ctx is not None:
+        forecast = compute_forecast(
+            total_tokens=result.total_token_count,
+            max_context=ctx.max_context,
+            current_memory_mb=mem.current_memory_mb if mem else None,
+            avg_growth_per_token_mb=mem.avg_growth_per_token_mb if mem else None,
+            memory_limit_mb=args.memory_limit,
+            current_latency_ms=(
+                lat.current_token_latency_ms if lat else None
+            ),
+            latency_slope_per_token_ms=latency_slope_per_token,
+            latency_threshold_ms=args.latency_limit,
+        )
+
+        print("\nForecast:")
+
+        # Context
+        if forecast.context_already_saturated:
+            print("  ⚠ Context window already saturated")
+        elif forecast.tokens_until_context_limit is not None:
+            print(f"  Context saturation in: ~{forecast.tokens_until_context_limit} tokens")
+
+        # Memory
+        if args.memory_limit is not None:
+            limit_str = _fmt_mb(args.memory_limit) if mem else f"{args.memory_limit:.0f} MB"
+            if forecast.memory_already_exceeded:
+                print(f"  ⚠ Memory limit ({limit_str}) already exceeded")
+            elif forecast.tokens_until_memory_limit is not None:
+                print(f"  Memory limit ({limit_str}) in: ~{forecast.tokens_until_memory_limit} tokens")
+            else:
+                print(f"  Memory limit ({limit_str}): memory not growing — limit unlikely to be reached")
+
+        # Latency
+        if args.latency_limit is not None:
+            if forecast.latency_already_exceeded:
+                print(f"  ⚠ Latency already exceeds {args.latency_limit:.0f}ms")
+            elif forecast.tokens_until_latency_threshold is not None:
+                print(f"  Latency >{args.latency_limit:.0f}ms in: ~{forecast.tokens_until_latency_threshold} tokens")
+            else:
+                print(f"  Latency >{args.latency_limit:.0f}ms: no degradation trend — threshold unlikely to be reached")
+
+
 if __name__ == "__main__":
     main()
