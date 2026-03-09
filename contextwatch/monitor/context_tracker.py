@@ -99,8 +99,14 @@ class ContextTracker:
         """Return ``True`` if *total_tokens* has reached the context limit."""
         return total_tokens >= self._max_context
 
-    def summarize(self) -> ContextSummary:
-        """Build a :class:`ContextSummary` from the recorded snapshots."""
+    def summarize(self, final_total_tokens: int = 0) -> ContextSummary:
+        """Build a :class:`ContextSummary` from the recorded snapshots.
+
+        Args:
+            final_total_tokens: Final prompt+generated token count. Used when
+                no generation snapshots were recorded (for example, EOS on the
+                first step or prompt already at context limit).
+        """
         if self._snapshots:
             last = self._snapshots[-1]
             return ContextSummary(
@@ -111,12 +117,13 @@ class ContextTracker:
                 per_step_snapshots=list(self._snapshots),
                 warning_issued=self._warning_issued,
             )
-        # Edge case: no tokens were generated (e.g. prompt already at limit).
+        # Edge case: no snapshots were recorded.
+        used_pct = final_total_tokens / self._max_context if self._max_context > 0 else 0.0
         return ContextSummary(
             max_context=self._max_context,
-            final_total_tokens=0,
-            context_used_pct=0.0,
-            remaining_tokens=self._max_context,
+            final_total_tokens=final_total_tokens,
+            context_used_pct=round(used_pct, 6),
+            remaining_tokens=max(self._max_context - final_total_tokens, 0),
             per_step_snapshots=[],
             warning_issued=self._warning_issued,
         )

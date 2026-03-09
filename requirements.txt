@@ -3,7 +3,6 @@ anyio==4.12.1
 certifi==2026.1.4
 click==8.3.1
 colorama==0.4.6
--e git+https://github.com/Dhruv-80/context-watch.git@638eff1cae3b8a0094cb0b0d7353a5bac8013d17#egg=contextwatch
 filelock==3.24.0
 fsspec==2026.2.0
 h11==0.16.0

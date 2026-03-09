@@ -48,6 +48,12 @@ Forecast:
   Memory limit (8.00 GB) in: ~2483 tokens
   Latency >100ms: no degradation trend — threshold unlikely to be reached
 
+Diagnosis:
+  Risk score: 36/100 (watch)
+  [MEDIUM] context: Context usage is above 75%.
+  Recommendations:
+    - Reserve headroom: cap generation or trim prompt to avoid hard stops.
+
 Run log saved to: runs/run_2026_03_08_154500.json
 ```
 
@@ -102,12 +108,27 @@ This produces three PNG plots in the same directory:
 - `memory.png` — process RSS memory over generation steps
 - `context.png` — context window utilisation (%) with warning thresholds
 
+### Generate a one-page brief
+
+Create a shareable markdown summary with risk score, bottleneck attribution, and prioritized actions:
+
+```bash
+contextwatch report runs/run_2026_03_08_154500.json
+```
+
+Optional output path:
+
+```bash
+contextwatch report runs/run_2026_03_08_154500.json --output reports/perf_brief.md
+```
+
 ### CLI help
 
 ```bash
 contextwatch --help
 contextwatch run --help
 contextwatch analyze --help
+contextwatch report --help
 ```
 
 ---
@@ -120,7 +141,9 @@ contextwatch/
 ├── inference_loop.py       # Manual stepwise inference (no model.generate)
 ├── utils.py                # Model loading, device selection
 ├── analyzer.py             # JSON log loading, matplotlib plot generation
+├── reporter.py             # One-page markdown incident/perf brief generation
 └── monitor/
+    ├── advisor.py          # Risk score + findings + action recommendations
     ├── context_tracker.py  # Context window tracking (% used, remaining)
     ├── latency_tracker.py  # Per-token latency, TTFT, rolling avg, trend
     ├── memory_tracker.py   # Process RSS tracking via psutil
@@ -155,6 +178,15 @@ Each tracker follows the same pattern: `start()` → `record_step()` per token �
 - **Context saturation**: `remaining = max_context - total_tokens` (exact)
 - **Memory limit**: `tokens = (limit - current) / avg_growth_per_token`
 - **Latency threshold**: `tokens = (threshold - current) / slope_per_token`
+
+### Actionable Diagnosis
+
+Beyond raw metrics, ContextWatch produces a deterministic **diagnosis**:
+- `risk_score` (0–100) and run `status` (`stable`, `watch`, `elevated`, `critical`)
+- Structured findings by area (`context`, `memory`, `latency`)
+- Human-readable recommendations for remediation
+
+Diagnosis is shown in the CLI and Streamlit UI, and stored in the run log JSON for downstream automation.
 
 ---
 

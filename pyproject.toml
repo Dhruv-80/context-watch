@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "contextwatch"
-version = "0.6.0"
+version = "0.8.0"
 description = "CLI tool for controlled LLM inference with real-time context, memory, and latency monitoring."
 readme = "README.md"
 license = "MIT"
@@ -29,6 +29,11 @@ dependencies = [
 
 [project.optional-dependencies]
 rich = ["rich"]
+vllm = ["openai"]
+ui = ["streamlit", "pandas"]
+
+[tool.setuptools.packages.find]
+include = ["contextwatch*"]
 
 [project.scripts]
 contextwatch = "contextwatch.cli:main"

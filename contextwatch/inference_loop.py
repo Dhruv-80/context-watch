@@ -168,7 +168,9 @@ def run_inference(
         generated_token_count=generated_token_count,
         total_token_count=prompt_token_count + generated_token_count,
         generated_text=generated_text,
-        context_summary=tracker.summarize(),
+        context_summary=tracker.summarize(
+            final_total_tokens=prompt_token_count + generated_token_count
+        ),
         latency_summary=latency_tracker.summarize(),
         memory_summary=memory_tracker.summarize(),
     )

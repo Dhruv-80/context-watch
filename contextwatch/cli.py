@@ -9,11 +9,6 @@ import re
 import sys
 from datetime import datetime
 
-from contextwatch.inference_loop import run_inference
-from contextwatch.monitor.forecaster import ForecastResult, compute_forecast
-from contextwatch.utils import load_model
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -66,10 +61,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run stepwise inference with token, context, latency, and memory monitoring.",
     )
     run_parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["hf", "vllm"],
+        default="hf",
+        help="Inference backend: 'hf' for local Hugging Face, 'vllm' for vLLM server (default: hf).",
+    )
+    run_parser.add_argument(
+        "--endpoint",
+        type=str,
+        default="http://localhost:8000",
+        help="vLLM server endpoint (only used with --mode vllm, default: http://localhost:8000).",
+    )
+    run_parser.add_argument(
         "--model",
         type=str,
         required=True,
-        help="Hugging Face model name or path (e.g. 'distilgpt2').",
+        help="Model name — HF Hub ID (e.g. 'distilgpt2') or vLLM model name.",
     )
     run_parser.add_argument(
         "--prompt",
@@ -119,6 +127,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory to save plots (default: same directory as the log file).",
     )
 
+    # --- `report` subcommand ----------------------------------------------
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Generate a one-page markdown performance brief from a JSON run log.",
+    )
+    report_parser.add_argument(
+        "log_file",
+        type=str,
+        help="Path to a JSON run log file.",
+    )
+    report_parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output markdown path (default: <log_stem>_brief.md).",
+    )
+
     return parser
 
 
@@ -135,6 +160,8 @@ def main(argv: list[str] | None = None) -> None:
         _handle_run(args)
     elif args.command == "analyze":
         _handle_analyze(args)
+    elif args.command == "report":
+        _handle_report(args)
 
 
 # ---------------------------------------------------------------------------
@@ -142,15 +169,32 @@ def main(argv: list[str] | None = None) -> None:
 # ---------------------------------------------------------------------------
 def _handle_run(args: argparse.Namespace) -> None:
     """Execute the ``run`` subcommand."""
-    model, tokenizer = load_model(args.model)
+    from contextwatch.monitor.advisor import build_diagnosis
+    from contextwatch.monitor.forecaster import compute_forecast
 
-    result = run_inference(
-        model=model,
-        tokenizer=tokenizer,
-        prompt=args.prompt,
-        max_tokens=args.max_tokens,
-        warn_threshold=args.warn_threshold,
-    )
+    mode = getattr(args, "mode", "hf")
+
+    if mode == "vllm":
+        from contextwatch.core.vllm_adapter import run_vllm
+
+        print(f"Mode: vLLM (endpoint: {args.endpoint})")
+        result = run_vllm(
+            endpoint=args.endpoint,
+            model=args.model,
+            prompt=args.prompt,
+            max_tokens=args.max_tokens,
+            warn_threshold=args.warn_threshold,
+        )
+    else:
+        from contextwatch.core.hf_adapter import run_hf
+
+        print("Mode: Hugging Face (local)")
+        result = run_hf(
+            model_name=args.model,
+            prompt=args.prompt,
+            max_tokens=args.max_tokens,
+            warn_threshold=args.warn_threshold,
+        )
 
     # --- token counts ------------------------------------------------------
     print(f"\nPrompt tokens: {result.prompt_token_count}")
@@ -197,6 +241,8 @@ def _handle_run(args: argparse.Namespace) -> None:
     if lat is not None and lat.trend_ms_per_100_tokens is not None:
         latency_slope_per_token = lat.trend_ms_per_100_tokens / 100.0
 
+    diagnosis = None
+    forecast = None
     if ctx is not None:
         forecast = compute_forecast(
             total_tokens=result.total_token_count,
@@ -238,11 +284,27 @@ def _handle_run(args: argparse.Namespace) -> None:
             else:
                 print(f"  Latency >{args.latency_limit:.0f}ms: no degradation trend — threshold unlikely to be reached")
 
+        diagnosis = build_diagnosis(
+            context_used_pct=ctx.context_used_pct,
+            latency_trend_ms_per_100_tokens=(
+                lat.trend_ms_per_100_tokens if lat else None
+            ),
+            forecast=forecast,
+            mode=mode,
+        )
+        print("\nDiagnosis:")
+        print(f"  Risk score: {diagnosis.risk_score}/100 ({diagnosis.status})")
+        for finding in diagnosis.findings:
+            print(f"  [{finding.severity.upper()}] {finding.area}: {finding.message}")
+        print("  Recommendations:")
+        for rec in diagnosis.recommendations:
+            print(f"    - {rec}")
+
     # --- JSON logging ------------------------------------------------------
-    _save_run_log(args, result)
+    _save_run_log(args, result, forecast=forecast, diagnosis=diagnosis)
 
 
-def _save_run_log(args: argparse.Namespace, result) -> None:
+def _save_run_log(args: argparse.Namespace, result, forecast=None, diagnosis=None) -> None:
     """Save the run results as a JSON log file in the ``runs/`` directory."""
     runs_dir = os.path.join(os.getcwd(), "runs")
     os.makedirs(runs_dir, exist_ok=True)
@@ -251,7 +313,9 @@ def _save_run_log(args: argparse.Namespace, result) -> None:
     log_path = os.path.join(runs_dir, f"run_{timestamp}.json")
 
     log_data: dict = {
+        "schema_version": 2,
         "timestamp": datetime.now().isoformat(),
+        "mode": getattr(args, "mode", "hf"),
         "model": args.model,
         "prompt": args.prompt,
         "max_tokens": args.max_tokens,
@@ -321,6 +385,33 @@ def _save_run_log(args: argparse.Namespace, result) -> None:
             for s in mem.per_step_snapshots
         ]
 
+    if forecast is not None:
+        log_data["forecast"] = {
+            "tokens_until_context_limit": forecast.tokens_until_context_limit,
+            "context_already_saturated": forecast.context_already_saturated,
+            "tokens_until_memory_limit": forecast.tokens_until_memory_limit,
+            "memory_already_exceeded": forecast.memory_already_exceeded,
+            "memory_limit_mb": forecast.memory_limit_mb,
+            "tokens_until_latency_threshold": forecast.tokens_until_latency_threshold,
+            "latency_already_exceeded": forecast.latency_already_exceeded,
+            "latency_threshold_ms": forecast.latency_threshold_ms,
+        }
+
+    if diagnosis is not None:
+        log_data["diagnosis"] = {
+            "risk_score": diagnosis.risk_score,
+            "status": diagnosis.status,
+            "findings": [
+                {
+                    "area": f.area,
+                    "severity": f.severity,
+                    "message": f.message,
+                }
+                for f in diagnosis.findings
+            ],
+            "recommendations": diagnosis.recommendations,
+        }
+
     with open(log_path, "w") as f:
         json.dump(log_data, f, indent=2)
 
@@ -362,6 +453,30 @@ def _handle_analyze(args: argparse.Namespace) -> None:
         print(f"\n✅ Generated {len(plots_created)} plot(s).")
     else:
         print("\n⚠ No plots generated — log file may be missing snapshot data.")
+
+
+# ---------------------------------------------------------------------------
+# `report` handler
+# ---------------------------------------------------------------------------
+def _handle_report(args: argparse.Namespace) -> None:
+    """Execute the ``report`` subcommand."""
+    from contextwatch.analyzer import load_run
+    from contextwatch.reporter import default_report_path, generate_report_markdown
+
+    log_path = args.log_file
+    if not os.path.isfile(log_path):
+        print(f"Error: file not found: {log_path}", file=sys.stderr)
+        sys.exit(1)
+
+    data = load_run(log_path)
+    out_path = args.output or default_report_path(log_path)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+
+    report_md = generate_report_markdown(data, source_path=log_path)
+    with open(out_path, "w") as f:
+        f.write(report_md)
+
+    print(f"Report generated: {out_path}")
 
 
 if __name__ == "__main__":

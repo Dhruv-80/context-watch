@@ -23,6 +23,38 @@ HOW TO UPDATE:
 - ...
 -->
 
+## [0.8.0] - 2026-03-09
+
+### Added
+- **vLLM adapter** (`contextwatch/core/vllm_adapter.py`) — stream tokens from any OpenAI-compatible vLLM server with per-token latency tracking
+- **HF adapter** (`contextwatch/core/hf_adapter.py`) — thin wrapper around the existing stepwise inference loop for CLI routing
+- **Streamlit UI** (`contextwatch/ui/streamlit_app.py`) — four-panel dashboard: run config, live metrics, graphs, and forecast
+- **Run advisor** (`contextwatch/monitor/advisor.py`) — deterministic diagnosis with risk score, findings, and recommendations
+- **Report generator** (`contextwatch/reporter.py`) and CLI `contextwatch report` command for one-page markdown performance briefs
+- CLI `--mode` flag (`hf` / `vllm`) and `--endpoint` flag for vLLM server URL
+- Mode badge in Streamlit header showing active backend (HuggingFace / vLLM)
+- Rolling average latency and trend delta in the Streamlit metrics panel
+- Prominent generated-text display in the Streamlit main area
+- Informative "vLLM memory unavailable" cards in metrics, graphs, and forecast panels
+- `openai` optional dependency group: `pip install contextwatch[vllm]`
+- `streamlit` + `pandas` optional dependency group: `pip install contextwatch[ui]`
+- Actionable `ImportError` messages when `openai` / `streamlit` / `pandas` are missing
+- Connection error handling in vLLM adapter with diagnostic checklist
+- Run log `schema_version` and persisted `forecast` / `diagnosis` payloads
+
+### Changed
+- `contextwatch/core/__init__.py` now uses lazy `__getattr__` imports — importing the core package no longer pulls in `torch` or `openai`
+- `vllm_adapter.py` moves all heavy imports (`InferenceResult`, `ContextSummary`, `LatencyTracker`, `OpenAI`) inside function scope to avoid torch dependency at import time
+- vLLM latency measurement now tracks token inter-arrival time instead of local chunk-processing time
+- vLLM token fallback now estimates with tokenizer, not chunk count
+- Streamlit generated-text rendering now uses safe plain-text display
+- Bumped version to 0.8.0
+
+### Notes
+- vLLM mode does not provide memory tracking — vLLM manages GPU memory server-side
+- Per-step context snapshots are unavailable in vLLM mode (summary-only)
+- The Streamlit UI lazily imports adapters on button click to keep startup fast
+
 ## [0.5.0] - 2026-02-26
 
 ### Added
