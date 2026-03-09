@@ -62,16 +62,18 @@ Run log saved to: runs/run_2026_03_08_154500.json
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/contextwatch.git
+git clone https://github.com/Dhruv-80/context-watch.git
 cd contextwatch
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-For rich terminal formatting (optional):
+Optional extras:
 
 ```bash
 pip install -e ".[rich]"
+pip install -e ".[vllm]"
+pip install -e ".[ui]"
 ```
 
 ---
@@ -92,6 +94,18 @@ contextwatch run \
   --prompt "Explain transformers" \
   --max-tokens 200 \
   --memory-limit 8GB \
+  --latency-limit 100ms
+```
+
+### Run with vLLM backend
+
+```bash
+contextwatch run \
+  --mode vllm \
+  --endpoint http://localhost:8000 \
+  --model mistralai/Mistral-7B-v0.1 \
+  --prompt "Explain transformers" \
+  --max-tokens 200 \
   --latency-limit 100ms
 ```
 
@@ -120,6 +134,12 @@ Optional output path:
 
 ```bash
 contextwatch report runs/run_2026_03_08_154500.json --output reports/perf_brief.md
+```
+
+### Launch the Streamlit dashboard
+
+```bash
+streamlit run contextwatch/ui/streamlit_app.py
 ```
 
 ### CLI help
@@ -251,7 +271,9 @@ Loading model (distilgpt2) ...
 | 0.3.0   | 3     | Latency tracking (TTFT, rolling avg, trend) |
 | 0.4.0   | 4     | Memory & KV cache growth tracking |
 | 0.5.0   | 5     | Forecasting engine (context, memory, latency) |
-| 0.6.0   | 6–8   | Test suite, CLI packaging, documentation |
+| 0.6.0   | 6     | Packaging polish + richer CLI/docs baseline |
+| 0.7.0   | 7     | Multi-backend architecture (HF/vLLM) + Streamlit UI |
+| 0.8.0   | 8     | Diagnosis engine + report generation + safer UI rendering |
 
 ---
 
